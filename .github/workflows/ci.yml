@@ -1,0 +1,48 @@
+name: Homebrew Tap CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - name: Checkout tap
+        uses: actions/checkout@v4
+
+      - name: Set up Homebrew
+        id: set-up-homebrew
+        uses: Homebrew/actions/setup-homebrew@master
+
+      - name: Symlink and trust tap in Homebrew
+        run: |
+          TAP_DIR="$(brew --repository)/Library/Taps/wjkoh/homebrew-tap"
+          mkdir -p "$(dirname "$TAP_DIR")"
+          rm -rf "$TAP_DIR"
+          ln -s "$GITHUB_WORKSPACE" "$TAP_DIR"
+          brew trust wjkoh/tap || true
+
+      - name: Audit and style check formulae
+        env:
+          NONINTERACTIVE: "1"
+        run: |
+          brew style wjkoh/tap
+          brew audit --strict wjkoh/tap/ghostbook wjkoh/tap/tgread wjkoh/tap/crashgate
+          brew livecheck wjkoh/tap/ghostbook wjkoh/tap/tgread wjkoh/tap/crashgate
+
+      - name: Build and test formulae from source
+        env:
+          NONINTERACTIVE: "1"
+        run: |
+          for formula in ghostbook tgread crashgate; do
+            brew install --verbose --build-from-source "wjkoh/tap/${formula}"
+            brew test --verbose "wjkoh/tap/${formula}"
+            brew uninstall "wjkoh/tap/${formula}"
+          done
